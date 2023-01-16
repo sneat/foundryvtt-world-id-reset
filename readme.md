@@ -11,8 +11,8 @@ Usage:
   ./foundryvtt-world-id-reset [flags]
 
 Flags:
-  -h, --help            help for foundryvtt-world-id-reset
-  -p, --path string     The path to the "worlds/" folder you wish to parse. It should contain the "world.json" file. Defaults to the current directory.
+  -h, --help            Displays the help
+  -p, --path string     The path to the "worlds" folder you wish to parse. It should contain the "world.json" file. Defaults to the current directory.
   -v, --verbose         Whether to output verbose logging.
 ```
 

@@ -26,6 +26,9 @@ type Service struct {
 	Options Options
 
 	logger *logrus.Logger
+
+	hasWorldData  bool
+	hasModuleData bool
 }
 
 // Run parses the database files and converts the IDs
@@ -62,9 +65,22 @@ func Run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	files, err := afero.Glob(appFs, filepath.Join(s.Options.Path, "data", "*.db"))
-	if err != nil {
-		return fmt.Errorf("error finding database files: %w", err)
+	var files []string
+
+	if s.hasWorldData {
+		worldFiles, err := afero.Glob(appFs, filepath.Join(s.Options.Path, "data", "*.db"))
+		if err != nil {
+			return fmt.Errorf("error finding database files: %w", err)
+		}
+		files = append(files, worldFiles...)
+	}
+
+	if s.hasModuleData {
+		moduleFiles, err := afero.Glob(appFs, filepath.Join(s.Options.Path, "packs", "*.db"))
+		if err != nil {
+			return fmt.Errorf("error finding database files: %w", err)
+		}
+		files = append(files, moduleFiles...)
 	}
 
 	if len(files) == 0 {
@@ -140,6 +156,10 @@ func Run(cmd *cobra.Command, args []string) error {
 	}
 
 	for oldID, newID := range sceneIDMap {
+		if oldID == newID {
+			continue
+		}
+
 		path := filepath.Join(s.Options.Path, "scenes", "thumbs")
 		oldPath := filepath.Join(path, oldID+".png")
 		newPath := filepath.Join(path, newID+".png")
@@ -182,6 +202,9 @@ func (s *Service) ParseFile(file string) ([]Document, error) {
 	var docs []Document
 
 	scanner := bufio.NewScanner(fs)
+	const maxCapacity = 1024 * 1024 // 1MB
+	buf := make([]byte, maxCapacity)
+	scanner.Buffer(buf, maxCapacity)
 	for scanner.Scan() {
 		doc, err := ParseDocument(scanner.Bytes())
 		if err != nil {
@@ -219,18 +242,38 @@ func (s *Service) UpdateFile(file string, idMap map[string]string) error {
 
 // Validate the options
 func (s *Service) Validate() error {
-	if ok, err := afero.Exists(appFs, filepath.Join(s.Options.Path, "world.json")); err != nil || !ok {
-		if err != nil {
-			return fmt.Errorf("error checking for world.json: %w", err)
-		}
-		return errors.New("world.json not found, check this is a Foundry VTT world directory")
+	worldExists, err := afero.Exists(appFs, filepath.Join(s.Options.Path, "world.json"))
+	if err != nil {
+		return fmt.Errorf("error checking for world.json: %w", err)
 	}
 
-	if ok, err := afero.DirExists(appFs, filepath.Join(s.Options.Path, "data")); err != nil || !ok {
-		if err != nil {
-			return fmt.Errorf("error checking for world database directory: %w", err)
+	moduleExists, err := afero.Exists(appFs, filepath.Join(s.Options.Path, "module.json"))
+	if err != nil {
+		return fmt.Errorf("error checking for module.json: %w", err)
+	}
+
+	if !worldExists && !moduleExists {
+		return errors.New("world.json or module.json not found, check this is a Foundry VTT world or module directory")
+	}
+
+	if worldExists {
+		s.hasWorldData = true
+		if ok, err := afero.DirExists(appFs, filepath.Join(s.Options.Path, "data")); err != nil || !ok {
+			if err != nil {
+				return fmt.Errorf("error checking for world database directory: %w", err)
+			}
+			return errors.New("world database directory not found, check this is a Foundry VTT world directory")
 		}
-		return errors.New("world database directory not found, check this is a Foundry VTT world directory")
+	}
+
+	if moduleExists {
+		s.hasModuleData = true
+		if ok, err := afero.DirExists(appFs, filepath.Join(s.Options.Path, "packs")); err != nil || !ok {
+			if err != nil {
+				return fmt.Errorf("error checking for module database directory: %w", err)
+			}
+			return errors.New("module database directory not found, check this is a Foundry VTT module directory")
+		}
 	}
 
 	return nil
